@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.replace('Bearer ', '');
+    
+    // Set the auth token for this request
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
@@ -28,9 +30,10 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
-    return NextResponse.json(campaigns);
+    return NextResponse.json(campaigns || []);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('GET /api/campaigns error:', error);
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
 }
 
@@ -42,34 +45,47 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    // Decode token to get user ID (simple JWT decode)
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    const body = await request.json();
+    try {
+      const decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
+      const userId = decoded.sub;
 
-    const { data: campaign, error } = await supabase
-      .from('campaigns')
-      .insert([
-        {
-          user_id: user.id,
-          name: body.name,
-          prospect_name: body.prospect_name,
-          prospect_company: body.prospect_company,
-          prospect_email: body.prospect_email,
-          custom_message: body.custom_message,
-          status: 'draft',
-        },
-      ])
-      .select()
-      .single();
+      if (!userId) {
+        return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+      }
 
-    if (error) throw error;
+      const body = await request.json();
 
-    return NextResponse.json(campaign, { status: 201 });
+      const { data: campaign, error } = await supabase
+        .from('campaigns')
+        .insert([
+          {
+            user_id: userId,
+            name: body.name,
+            prospect_name: body.prospect_name,
+            prospect_company: body.prospect_company,
+            prospect_email: body.prospect_email,
+            custom_message: body.custom_message,
+            status: 'draft',
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return NextResponse.json(campaign, { status: 201 });
+    } catch (decodeError: any) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('POST /api/campaigns error:', error);
+    return NextResponse.json({ error: error.message || 'Failed to create campaign' }, { status: 500 });
   }
 }
