@@ -33,20 +33,23 @@ export default function SignupPage() {
     }
 
     try {
-      const { error: signupError } = await supabase.auth.signUp({
+      const { data: authData, error: signupError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
       });
 
       if (signupError) throw signupError;
+      if (!authData.user) throw new Error('No user returned from signup');
 
-      // Create user profile
+      // Create user profile with ID from auth response
       const { error: profileError } = await supabase
         .from('users')
         .insert([
           {
+            id: authData.user.id,
             email: formData.email,
             name: formData.name,
+            subscription_tier: 'starter',
           },
         ]);
 
